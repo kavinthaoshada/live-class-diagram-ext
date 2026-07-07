@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    name: Rust engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run unit tests
+        working-directory: rust-engine
+        run: cargo test
+
+      - name: Build (release)
+        working-directory: rust-engine
+        run: cargo build --release
+
+  extension:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: live-class-diagram
+        run: npm ci
+
+      - name: Lint
+        working-directory: live-class-diagram
+        run: npm run lint
+
+      - name: Build webview bundle
+        working-directory: live-class-diagram
+        run: npm run compile:webview

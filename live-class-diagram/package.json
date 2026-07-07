@@ -1,0 +1,112 @@
+{
+  "name": "live-class-diagram",
+  "displayName": "Live Class Diagram",
+  "description": "Live, automatically updating UML class diagrams for your project",
+  "version": "0.0.2",
+  "publisher": "live-class-diagram",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "liveClassDiagram.open",
+        "title": "Live Class Diagram: Open Diagram",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "liveClassDiagram.refresh",
+        "title": "Live Class Diagram: Refresh Diagram",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "liveClassDiagram.open"
+        },
+        {
+          "command": "liveClassDiagram.refresh"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "liveClassDiagram.refresh",
+          "when": "activeCustomEditorId == liveClassDiagram.diagramView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "liveClassDiagram.diagramView",
+        "displayName": "Live Class Diagram",
+        "selector": [
+          {
+            "filenamePattern": "*.liveclass"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "Live Class Diagram",
+      "properties": {
+        "liveClassDiagram.enginePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the rust-engine executable. Leave empty to use the bundled binary."
+        },
+        "liveClassDiagram.excludeGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/build/**"
+          ],
+          "description": "Glob patterns for files and folders excluded from diagram analysis."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test",
+    "compile:webview": "node esbuild.js",
+    "watch:webview": "node esbuild.js --watch",
+    "compile:engine": "node scripts/build-engine.js",
+    "setup": "npm run compile:engine && npm run compile:webview",
+    "vscode:prepublish": "npm run setup"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.125.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^10.5.0",
+    "globals": "^17.7.0"
+  },
+  "dependencies": {
+    "dagre": "^0.8.5",
+    "svg-pan-zoom": "^3.6.2"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  }
+}

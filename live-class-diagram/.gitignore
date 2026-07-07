@@ -1,0 +1,8 @@
+node_modules
+.vscode-test/
+*.vsix
+.env
+media/webview.js
+media/webview.js.map
+media/webview.css
+bin/
