@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also publish each package to the VS Code Marketplace (requires the VSCE_PAT repo secret)"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -97,3 +102,25 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/**/*.vsix
+
+  publish-marketplace:
+    name: Publish to VS Code Marketplace
+    needs: build
+    runs-on: ubuntu-latest
+    # Never runs on a plain tag push — only when someone explicitly ticks
+    # "publish" while manually running this workflow from the Actions tab,
+    # so a release is never auto-published without a deliberate action.
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish each platform package
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          for file in dist/*/*.vsix; do
+            echo "Publishing $file"
+            npx --yes @vscode/vsce publish --packagePath "$file"
+          done

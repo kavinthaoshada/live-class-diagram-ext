@@ -289,6 +289,36 @@ mod tests {
     }
 
     #[test]
+    fn generic_field_type_links_to_inner_type_not_just_wrapper() {
+        // `extract_referenced_types` tokenizes on any non-alphanumeric
+        // character, so angle brackets/commas already split generic type
+        // arguments out on their own — `Repository<User>` should surface
+        // `User` as a referenced type even though `Repository` isn't itself
+        // a known class in this project.
+        let mut service = class("UserService", ClassKind::Class);
+        service.fields.push(field("repo", "Repository<User>"));
+        let user = class("User", ClassKind::Class);
+
+        let diagram = build_diagram(vec![service, user]);
+
+        let rel = find(&diagram, "UserService", "User").expect("expected UserService -> User edge");
+        assert_eq!(rel.kind, RelationshipKind::Composition);
+    }
+
+    #[test]
+    fn generic_field_type_links_to_both_wrapper_and_inner_type_when_both_known() {
+        let mut service = class("UserService", ClassKind::Class);
+        service.fields.push(field("repo", "Repository<User>"));
+        let repository = class("Repository", ClassKind::Class);
+        let user = class("User", ClassKind::Class);
+
+        let diagram = build_diagram(vec![service, repository, user]);
+
+        assert!(find(&diagram, "UserService", "Repository").is_some());
+        assert!(find(&diagram, "UserService", "User").is_some());
+    }
+
+    #[test]
     fn no_duplicate_edges_for_same_relationship() {
         let mut dog = class("Dog", ClassKind::Class);
         dog.methods.push(method("fetch", &[("item", "Toy")], "Toy"));

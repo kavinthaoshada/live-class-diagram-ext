@@ -3,8 +3,17 @@
   "displayName": "Live Class Diagram",
   "description": "Live, automatically updating UML class diagrams for your project",
   "version": "0.0.2",
-  "publisher": "live-class-diagram",
+  "publisher": "kavinthaoshada",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kavinthaoshada/live-class-diagram-ext.git",
+    "directory": "live-class-diagram"
+  },
+  "bugs": {
+    "url": "https://github.com/kavinthaoshada/live-class-diagram-ext/issues"
+  },
+  "homepage": "https://github.com/kavinthaoshada/live-class-diagram-ext#readme",
   "engines": {
     "vscode": "^1.125.0"
   },

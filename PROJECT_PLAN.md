@@ -169,31 +169,49 @@ to 0.05x and up to 24x).
 - [x] CI workflow (`.github/workflows/ci.yml`): runs `cargo test` and
       `cargo build --release` on Ubuntu/Windows/macOS runners, plus
       `npm run lint` and `npm run compile:webview` for the extension, on
-      every push and pull request
-- [x] Release workflow (`.github/workflows/release.yml`): a 5-way matrix
-      (win32-x64, darwin-x64, darwin-arm64, linux-x64, linux-arm64) that
-      builds the Rust engine natively per target (with an aarch64 Linux
-      cross-linker step on the x86_64 Ubuntu runner), bundles the webview,
-      and runs `vsce package --target <target>` so each platform gets its
-      own small `.vsix` containing only its own native binary — no universal
-      multi-binary bundle. Triggered on `v*` tags, attaches all `.vsix`
-      files to a GitHub Release. **Caveat**: this was written to the best
-      of my knowledge of `cargo`/`vsce`/GitHub Actions conventions and its
-      YAML was checked for valid syntax, but it has not been run for real —
-      this sandbox only has a Windows machine and the project isn't yet
-      pushed to a GitHub remote. The aarch64 Linux cross-compilation step
-      is the most likely to need a tweak on first real run
+      every push and pull request. **Verified for real**: the project is now
+      pushed to `github.com/kavinthaoshada/live-class-diagram-ext`, and all
+      4 jobs (rust on 3 OSes + the extension job) completed successfully on
+      GitHub's actual runners — confirmed via the GitHub API, not just by
+      reading the YAML
+- [x] Release workflow (`.github/workflows/release.yml`) exists: a 5-way
+      matrix (win32-x64, darwin-x64, darwin-arm64, linux-x64, linux-arm64)
+      that builds the Rust engine natively per target (with an aarch64
+      Linux cross-linker step on the x86_64 Ubuntu runner), bundles the
+      webview, and runs `vsce package --target <target>` so each platform
+      gets its own small `.vsix` with only its own native binary. Triggered
+      on `v*` tags, attaches all `.vsix` files to a GitHub Release.
+      **Still unverified**: no tag has been pushed yet, so this workflow
+      itself has never actually run — only `ci.yml` has real evidence
+      behind it so far. Push a `v0.0.1`-style tag to find out if the
+      aarch64 cross-compilation step needs adjusting
+- [x] Generic type parameters in relationship inference, double-checked:
+      turns out this already worked from the very first implementation —
+      `extract_referenced_types` tokenizes on every non-alphanumeric
+      character, so `Repository<User>` was already being split into
+      `Repository` and `User` and each checked independently against known
+      class names. Added two tests (`generic_field_type_links_to_inner_type_
+      not_just_wrapper`, `..._to_both_wrapper_and_inner_type_when_both_known`)
+      to lock this in rather than re-implementing something that already
+      worked
+- [x] PHP constructor property promotion (`function __construct(private
+      string $name)`) now becomes a class field, mirroring the existing
+      TypeScript parameter-property handling — confirmed the tree-sitter-php
+      node kind (`property_promotion_parameter`) by dumping the real parse
+      tree first, same discipline as every other language parser
+- [x] Publishing prep: added a root `LICENSE` (MIT) plus a copy inside
+      `live-class-diagram/` (vsce looks for it there specifically), added
+      `repository`/`bugs`/`homepage` fields to `package.json` pointing at
+      the real GitHub repo, and wrote real `CHANGELOG.md` entries for 0.0.1
+      and 0.0.2. Repackaging now produces zero `vsce package` warnings
+      (previously warned about a missing `repository` field and missing
+      `LICENSE`)
 
 ## Todo
 
 ### Near-term (engine correctness & coverage)
 - [ ] Incremental re-parsing (only re-parse changed files instead of a full
       workspace rescan on every change) for large projects
-- [ ] Generic type parameter handling in relationship inference
-      (`Repository<User>` should link to `User`, not just `Repository`)
-- [ ] PHP constructor property promotion (`function __construct(private
-      string $name)`) is not yet turned into a class field, unlike the
-      equivalent TypeScript parameter-property feature
 - [ ] Laravel/Eloquent-aware relationships: `hasMany`/`belongsTo`/
       `belongsToMany` method calls in a model imply a real association to
       the related model, but today they only show up as a generic
@@ -206,18 +224,25 @@ to 0.05x and up to 24x).
       don't have to be added to this repo directly
 
 ### Packaging & distribution
-- [ ] The project isn't pushed to a git remote yet, so `ci.yml`/`release.yml`
-      exist but have never actually executed on GitHub's runners — needs a
-      real run (push to a repo, tag a `v0.0.1`-style release) to confirm the
-      cross-platform matrix genuinely works end to end, especially the
-      aarch64 Linux cross-compilation step
-- [ ] A `CHANGELOG.md` entry / version bump policy tied to tags, so the
-      release workflow's tag-triggered packaging has a clear source of truth
-      for what version number to use (currently manual: `package.json`
-      version is bumped by hand)
-- [ ] Publish to the VS Code Marketplace / Open VSX (needs a publisher
-      account and `VSCE_PAT`/`OVSX_PAT` secrets in the repo, plus deciding
-      whether early releases go out as pre-releases)
+- [ ] Push a `v0.0.1`-style tag to actually exercise `release.yml` for the
+      first time and confirm the 5-way cross-platform matrix works,
+      especially the aarch64 Linux cross-compilation step
+- [ ] A version bump policy tied to tags, so the release workflow's
+      tag-triggered packaging has a clear source of truth for what version
+      number to use (currently manual: `package.json` version is bumped by
+      hand)
+- [ ] Publish to the VS Code Marketplace (manual steps documented for the
+      user — see the publishing instructions given alongside this update;
+      requires the user's own Azure DevOps publisher account and PAT, which
+      isn't something that can be created on their behalf)
+- [ ] Automate marketplace publishing from `release.yml` itself
+      (`vsce publish` with a `VSCE_PAT` repo secret) once the first manual
+      publish has been done at least once
+- [ ] Open VSX publishing (same idea, for editors like Cursor/VSCodium that
+      use the Open VSX registry instead of the Microsoft Marketplace)
+- [ ] A real icon (128x128 PNG) — `package.json` has no `icon` field yet, so
+      the Marketplace listing will show a generic default icon until one is
+      added
 
 ### UX polish
 - [ ] Diffed re-render (animate node position/opacity changes between

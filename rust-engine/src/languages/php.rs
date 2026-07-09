@@ -204,13 +204,50 @@ fn extract_members(node: Node, src: &str, traits: &mut Vec<String>) -> (Vec<Fiel
                 }
             }
             "method_declaration" => {
-                methods.push(extract_method(member, src));
+                let method = extract_method(member, src);
+                if method.name == "__construct" {
+                    fields.extend(extract_promoted_properties(member, src));
+                }
+                methods.push(method);
             }
             _ => {}
         }
     }
 
     (fields, methods)
+}
+
+/// PHP 8's constructor property promotion (`public function
+/// __construct(private string $name) {}`) declares a class property and a
+/// constructor parameter in one place — mirrors the equivalent TypeScript
+/// parameter-property handling in `ecma.rs`.
+fn extract_promoted_properties(constructor: Node, src: &str) -> Vec<FieldNode> {
+    let mut fields = Vec::new();
+    let Some(parameters) = constructor.child_by_field_name("parameters") else {
+        return fields;
+    };
+    for param in children_by_kind(parameters, "property_promotion_parameter") {
+        let name = param
+            .child_by_field_name("name")
+            .map(|n| strip_sigil(text(n, src)))
+            .unwrap_or_default();
+        let type_name = param
+            .child_by_field_name("type")
+            .map(|t| text(t, src).to_string())
+            .unwrap_or_else(|| "any".to_string());
+        let visibility = match param.child_by_field_name("visibility").map(|v| text(v, src)) {
+            Some("private") => Visibility::Private,
+            Some("protected") => Visibility::Protected,
+            _ => Visibility::Public,
+        };
+        fields.push(FieldNode {
+            name,
+            type_name,
+            visibility,
+            is_static: false,
+        });
+    }
+    fields
 }
 
 fn visibility_of(node: Node, src: &str) -> Visibility {
@@ -347,5 +384,25 @@ mod tests {
         let shape = find(&classes, "Shape");
         assert_eq!(shape.kind, ClassKind::Interface);
         assert!(shape.methods[0].is_abstract);
+    }
+
+    #[test]
+    fn constructor_property_promotion_becomes_fields() {
+        let classes = parse_php(
+            "class Person {\n\
+             \x20   public function __construct(private readonly string $id, public int $age = 1) {}\n\
+             }\n",
+        );
+
+        let person = find(&classes, "Person");
+        let id = person.fields.iter().find(|f| f.name == "id").unwrap();
+        assert_eq!(id.visibility, Visibility::Private);
+        assert_eq!(id.type_name, "string");
+
+        let age = person.fields.iter().find(|f| f.name == "age").unwrap();
+        assert_eq!(age.visibility, Visibility::Public);
+        assert_eq!(age.type_name, "int");
+
+        assert!(person.methods.iter().any(|m| m.name == "__construct"));
     }
 }
