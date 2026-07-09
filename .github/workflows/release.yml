@@ -94,19 +94,41 @@ jobs:
     name: Attach VSIX files to GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Runs for a real tag push, and also for a manual run from a branch
+    # (e.g. re-running from `main` after a workflow fix) — a tag push alone
+    # used to be required, which meant manual re-runs silently skipped this
+    # job entirely.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     # The default GITHUB_TOKEN is read-only on newer repos; creating a
     # release needs write access, scoped to just this job.
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
 
+      # A tag push already tells us the release tag from github.ref. A
+      # manual run from a branch doesn't have one, so fall back to
+      # "v<version from package.json>" — softprops/action-gh-release creates
+      # the tag itself if it doesn't already exist.
+      - name: Determine release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            version=$(node -p "require('./live-class-diagram/package.json').version")
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
           files: dist/**/*.vsix
 
   publish-marketplace:
