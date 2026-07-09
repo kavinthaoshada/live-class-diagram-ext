@@ -23,7 +23,9 @@ jobs:
             rust_target: x86_64-pc-windows-msvc
             vsce_target: win32-x64
             exe_name: rust-engine.exe
-          - runner: macos-13
+          # macos-13 was fully retired by GitHub in December 2025; Intel Mac
+          # builds now run on macos-15-intel instead.
+          - runner: macos-15-intel
             rust_target: x86_64-apple-darwin
             vsce_target: darwin-x64
             exe_name: rust-engine
