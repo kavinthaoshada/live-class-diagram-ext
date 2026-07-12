@@ -148,7 +148,24 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
+          # The Marketplace gallery API occasionally times out on a publish
+          # request for reasons unrelated to the package itself (transient,
+          # not something a retry-with-the-same-file risks corrupting —
+          # vsce refuses to publish a version that's already live, so a
+          # retry after a real partial success just fails loudly instead of
+          # double-publishing).
           for file in dist/*/*.vsix; do
             echo "Publishing $file"
-            npx --yes @vscode/vsce publish --packagePath "$file"
+            attempt=1
+            max_attempts=3
+            until npx --yes @vscode/vsce publish --packagePath "$file"; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "Failed to publish $file after $max_attempts attempts"
+                exit 1
+              fi
+              delay=$((attempt * 30))
+              echo "Attempt $attempt failed, retrying in ${delay}s..."
+              sleep "$delay"
+              attempt=$((attempt + 1))
+            done
           done
