@@ -21,7 +21,7 @@ rust-engine/            headless analysis engine (no GUI)
   src/watcher.rs          debounced file-system watcher -> rescans -> NDJSON on stdout
   src/main.rs             CLI: `analyze <root>` (one-shot) / `watch <root>` (continuous)
   (each src/languages/*.rs and relationships.rs/scanner.rs has its own
-   #[cfg(test)] mod tests — 41 unit tests total, run with `cargo test`)
+   #[cfg(test)] mod tests — 51 unit tests total, run with `cargo test`)
 
 live-class-diagram/      VS Code extension (Node/JS host + webview UI)
   extension.js            activation, command + custom editor registration
@@ -29,12 +29,14 @@ live-class-diagram/      VS Code extension (Node/JS host + webview UI)
   src/diagramPanel.js     webview panel manager (HTML, messaging, caching latest model)
   src/customEditor.js     custom editor provider for the *.liveclass file
   src/placeholder.js      creates ClassDiagram.liveclass in the workspace root
-  webview-src/            layout (dagre) + SVG UML renderer + pan/zoom (esbuild-bundled to media/)
+  webview-src/            layout (dagre) + SVG UML renderer + pan/zoom + export (esbuild-bundled to media/)
+    export.js             inlines computed styles + resets pan/zoom transform, serializes to SVG or rasterizes to PNG
 
 .github/workflows/
   ci.yml                  cargo test + cargo build on 3 OSes, npm lint + webview build, on every push/PR
   release.yml             cross-platform matrix build of rust-engine + per-target `vsce package`,
-                           triggered on `v*` tags, attaches .vsix files to a GitHub Release
+                           triggered on `v*` tags or manual dispatch; attaches .vsix files to a
+                           GitHub Release and (opt-in, manual-dispatch only) publishes to the Marketplace
 ```
 
 Data flow: file change -> `notify` (Rust) -> debounce -> rescan -> JSON on
@@ -46,22 +48,55 @@ layout -> SVG re-render.
 - Command palette: "Live Class Diagram: Open Diagram", or
 - Click `ClassDiagram.liveclass` in the workspace root (auto-created on
   activation) — it opens through a registered custom editor.
+- Or install from the Marketplace: `kavinthaoshada.live-class-diagram`.
 
 Once open: double-click any class to isolate it and its direct relationships
-(Escape or "Show All" to return); use the "Group" toggle to cluster classes
-into folder-based UML package boxes; `+`/`-`/"Reset" control zoom (now down
-to 0.05x and up to 24x).
+(Escape or "Show All" to return); Ctrl/Cmd+click a class, or an individual
+field or method, to jump to that exact line in the editor; use the "Group"
+toggle to cluster classes into folder-based UML package boxes; type in the
+search box (top-left) to highlight classes by name/field/method and dim the
+rest; "Export PNG"/"Export SVG" save whatever the current view is (full
+diagram, grouped, or a focused single class) to a file; `+`/`-`/"Reset"
+control zoom (down to 0.05x, up to 24x).
+
+## Release process
+
+```sh
+cd live-class-diagram
+# commit all feature/fix changes first — npm version needs a clean tree
+npm run release:patch   # or release:minor / release:major
+git push --follow-tags
+```
+
+`npm version patch` bumps `package.json`'s version, commits that change, and
+creates a `vX.Y.Z` git tag in one step — this is the whole "policy": there's
+no separate version-vs-tag bookkeeping to get wrong, because npm's own
+tagging convention (`v` prefix) already matches what `release.yml` expects.
+Pushing the tag triggers `release.yml`'s 5-platform build; from there,
+either publish manually per platform (see the Marketplace publishing
+instructions from an earlier session) or use the workflow's manual dispatch
+with "publish" ticked.
+
+Remember to update `CHANGELOG.md` as part of the commit(s) before running
+`npm version` — it doesn't do that for you.
 
 ## Testing
 
-- `cd rust-engine && cargo test` — 41 unit tests across the five language
+- `cd rust-engine && cargo test` — 51 unit tests across the five language
   parsers, relationship inference, and the scanner.
 - `cd live-class-diagram && npm run lint` — ESLint over the extension host
   and webview source.
 - No automated test drives the actual VS Code extension host or webview yet
-  (would need `@vscode/test-electron`); everything above the Rust/JSON
-  boundary has so far only been verified by hand (see the walkthroughs
-  described throughout "Completed" below) or the eyeballed browser
+  (would need `@vscode/test-electron`) — nothing runs in CI for this layer.
+  Webview behavior has instead been checked manually with a throwaway local
+  HTML harness serving the real built `media/webview.js` in a real browser,
+  sometimes with a `<meta>` CSP tag deliberately matching the real webview's
+  CSP string exactly (this is what caught the PNG export bug — the first
+  version of this harness had no CSP at all and missed it entirely). Every
+  claim below of something being "verified" or "caught" refers to this kind
+  of manual, scripted-in-the-moment check, not a regression suite that runs
+  again automatically — see the walkthroughs described throughout
+  "Completed" below, or the eyeballed browser
   screenshots taken during development.
 
 ## Completed
@@ -206,16 +241,148 @@ to 0.05x and up to 24x).
       and 0.0.2. Repackaging now produces zero `vsce package` warnings
       (previously warned about a missing `repository` field and missing
       `LICENSE`)
+- [x] **Published to the VS Code Marketplace**: `kavinthaoshada.live-class-diagram`
+      v0.0.2 is live, built by `release.yml`'s 5-way matrix and published via
+      the opt-in `publish-marketplace` job. Getting there surfaced three real
+      GitHub Actions issues, each fixed in the workflow rather than worked
+      around by hand each time:
+      - `macos-13` runners were fully retired by GitHub in December 2025;
+        switched the darwin-x64 job to `macos-15-intel`
+      - the default `GITHUB_TOKEN` is read-only on newer repos, so creating
+        a GitHub Release needs an explicit `permissions: contents: write`
+        on that job
+      - the release-attachment job was gated to `refs/tags/v*` only, so a
+        manual re-run from a branch (needed to pick up the two fixes above
+        without re-tagging) silently skipped it; broadened the condition and
+        added a fallback that derives the release tag from
+        `package.json`'s version when there's no real tag in `github.ref`
+- [x] Extension icon: `package.json` now has `"icon":
+      "media/class-diagram-generator.png"` — the image was already sitting
+      in the right place (`media/` is already packaged, same as
+      `webview.js`/`webview.css`), so no file move was needed
+- [x] Export current view as PNG or SVG: two new toolbar buttons export
+      exactly whatever is currently on screen — the full diagram, a
+      folder-grouped layout, or a single focused class with its direct
+      relationships (reusing the existing focus-mode "select one class"
+      feature rather than building a separate multi-select UI for it).
+      `vscode.window.showSaveDialog` + `vscode.workspace.fs.writeFile` on
+      the extension-host side, so it's a native save dialog, not a browser
+      download. Caught and fixed a real bug while verifying: `svg-pan-zoom`
+      rewrites the live SVG's `viewBox` (and wraps content in a
+      `.svg-pan-zoom_viewport` `<g>` with a transform matrix) to reflect
+      whatever the user last panned/zoomed to — exporting after zooming in
+      was silently exporting the zoomed viewport's dimensions and a
+      leftover pan/zoom transform instead of the full diagram. Fixed by
+      stashing the diagram's true size in `data-content-*` attributes at
+      render time and resetting the pan/zoom transform on the exported
+      clone. Also inlines every element's resolved computed style (colors
+      etc. come from `var(--vscode-*)`, which don't resolve outside the
+      webview's own page) so the exported file looks right when opened
+      completely outside VS Code, not just when viewed inside it
+- [x] Fixed "Export PNG" doing nothing (reported after the export feature
+      shipped, while "Export SVG" worked fine — that asymmetry was the key
+      clue). Root cause: the webview's CSP is `img-src ${webview.cspSource}`,
+      and PNG rasterization loads the SVG into an `<img>` via a `blob:` URL
+      to draw it onto a canvas — `blob:` wasn't in the allowed list, so the
+      browser silently blocked the image load. SVG export never touches
+      `<img>` at all (pure text serialization), which is exactly why only
+      PNG broke. Fixed by adding `blob:` to `img-src`. This is also what
+      prompted rebuilding the verification method: the previous round's
+      browser check used a test page with **no CSP at all**, so it never
+      could have caught this. Re-verified with a harness whose `<meta>` CSP
+      tag matches the shipped one exactly — first confirmed the bug
+      reproduces without `blob:`, then confirmed the fix resolves it with
+      `blob:` added, rather than trusting a fix that "look right" in code
+- [x] Export failures now show a `vscode.window.showErrorMessage` instead of
+      failing silently — a direct response to the PNG bug above having no
+      visible symptom at all beyond "nothing happens"
+- [x] Group-by-folder and focus mode now persist across the webview being
+      disposed and recreated (closing/reopening the panel, reloading the
+      window) via `vscode.getState()`/`setState()`. Verified with a
+      localStorage-backed stand-in for VS Code's real state persistence
+      (survives an actual page navigation, unlike an in-memory JS variable)
+      — toggled Group on, reloaded, confirmed the grouped layout reappeared
+      without re-clicking; separately did the same for a focused class
+- [x] `README.md` rewritten to actually describe Focus mode, Group-by-folder,
+      Export, and the wider zoom range, plus an `Install` section and the
+      full 5-language list — this is what the Marketplace listing displays,
+      and it previously only described the original TS/JS-only MVP
+- [x] Filter/search classes: a search box highlights matching classes (blue
+      outline, same visual language as focus mode) and dims the rest,
+      matching against class name, field names, and method names — not
+      layout-destructive, so it works uniformly across the full diagram,
+      grouped view, or a focused class without needing special-case
+      handling for each mode. Shows a live "N of M classes match" count in
+      place of the usual hint text. Verified in-browser: text matches
+      surface via field names too (e.g. searching "user" correctly matched
+      `AuthService` through its `userService` field, not just classes
+      literally named User*), and the highlight correctly re-applies after
+      toggling Group (since that fully rebuilds the SVG DOM)
+- [x] Version-bump/release policy: documented (see "Release process" above)
+      rather than built as new tooling — `npm version patch/minor/major`
+      already bumps `package.json`, commits, and creates the matching
+      `vX.Y.Z` git tag in one step, which is exactly the tag shape
+      `release.yml` expects. Added `release:patch`/`release:minor`/
+      `release:major` npm scripts as a discoverable alias for the same
+      command rather than writing a custom bump script
+- [x] New, simplified extension icon (user-provided) — the "zzeylon"
+      wordmark mismatch from the original is gone, replaced with bold "LCD"
+      lettering; still square (752x752), no `package.json` change needed
+      since the filename didn't change
+- [x] Laravel/Eloquent-aware relationships: `hasMany`/`belongsToMany`/
+      `morphMany`/`morphToMany` (collection-shaped) and `belongsTo`/
+      `hasOne`/`morphOne`/`morphTo` (single-shaped) relationship accessors
+      are now recognized on PHP models. These aren't type-hinted in
+      idiomatic Eloquent code (`return $this->hasMany(Post::class);` has no
+      declared return type), so they were previously invisible to the
+      existing type-hint-based relationship inference entirely. Implemented
+      by recursively scanning each method's body for a `$this->` call to a
+      known relation name, extracting the related class from its
+      `X::class` argument, and synthesizing a field named after the
+      accessor method itself (`posts`, matching how Eloquent callers
+      actually use it: `$user->posts`) with a `[]`-suffixed or bare type —
+      which means the *existing* composition/aggregation inference in
+      `relationships.rs` picks these up automatically, with zero changes
+      needed there. Confirmed the real tree-sitter-php shape
+      (`member_call_expression`, `class_constant_access_expression`) before
+      writing the extraction, same discipline as every other language
+      parser. 4 new tests, including one exercising the full pipeline
+      through to an actual rendered relationship edge
+- [x] Ctrl/Cmd+click a class to jump to its declaration in the editor.
+      Deliberately scoped to class-level only for now (uses the `file`/
+      `line` every `ClassNode` already carries — no Rust engine changes
+      needed at all); field/method-level jumps would need each parser to
+      also track a line number per member, which none of them do yet.
+      Chose a modifier-click over plain click specifically so it can never
+      collide with the existing double-click-for-focus-mode gesture — a
+      double-click fires two plain `click` events first, so if navigation
+      triggered on any unmodified click it would fire from the first click
+      before focus mode ever got the second. Verified all three cases in
+      isolation: plain click does nothing (as before), double-click still
+      focuses, Ctrl+click navigates and does not also focus
+- [x] Field/method-level "jump to source": Ctrl/Cmd+click now works on an
+      individual field or method line, not just the class as a whole.
+      `FieldNode`/`MethodNode` gained a `line`, captured the same way
+      `ClassNode`'s already was — required touching all 20 construction
+      sites across the five language parsers (found every one by just
+      building and reading the compiler's "missing field" errors, rather
+      than grepping by hand). On the webview side, `classCompartments` now
+      carries `{text, line}` per member instead of a plain display string,
+      threaded through `layout.js` and `render.js`; a click on a member
+      line calls `stopPropagation()` so it doesn't also trigger the
+      class-level handler sitting on the same DOM group. Added a real
+      regression test that caught an actual mistake: my first line
+      assertions were off by one because `parse_php`'s test helper
+      prepends a `<?php` line, shifting every subsequent line down —
+      fixed the test, not the (correct) implementation. Verified in-browser
+      that a field click, a method click, and a plain background click on
+      the same box each report a different, correct line
 
 ## Todo
 
 ### Near-term (engine correctness & coverage)
 - [ ] Incremental re-parsing (only re-parse changed files instead of a full
       workspace rescan on every change) for large projects
-- [ ] Laravel/Eloquent-aware relationships: `hasMany`/`belongsTo`/
-      `belongsToMany` method calls in a model imply a real association to
-      the related model, but today they only show up as a generic
-      dependency if the related class is referenced in a type hint at all
 - [ ] C#'s extends-vs-implements split is a naming-convention heuristic
       (`IFoo` => interface); a base class that doesn't follow the `I`-prefix
       convention when combined with interfaces that also don't follow it
@@ -224,41 +391,25 @@ to 0.05x and up to 24x).
       don't have to be added to this repo directly
 
 ### Packaging & distribution
-- [ ] Push a `v0.0.1`-style tag to actually exercise `release.yml` for the
-      first time and confirm the 5-way cross-platform matrix works,
-      especially the aarch64 Linux cross-compilation step
-- [ ] A version bump policy tied to tags, so the release workflow's
-      tag-triggered packaging has a clear source of truth for what version
-      number to use (currently manual: `package.json` version is bumped by
-      hand)
-- [ ] Publish to the VS Code Marketplace (manual steps documented for the
-      user — see the publishing instructions given alongside this update;
-      requires the user's own Azure DevOps publisher account and PAT, which
-      isn't something that can be created on their behalf)
-- [ ] Automate marketplace publishing from `release.yml` itself
-      (`vsce publish` with a `VSCE_PAT` repo secret) once the first manual
-      publish has been done at least once
-- [ ] Open VSX publishing (same idea, for editors like Cursor/VSCodium that
-      use the Open VSX registry instead of the Microsoft Marketplace)
-- [ ] A real icon (128x128 PNG) — `package.json` has no `icon` field yet, so
-      the Marketplace listing will show a generic default icon until one is
-      added
+- [ ] Open VSX publishing (same idea as the Marketplace job, for editors
+      like Cursor/VSCodium that use the Open VSX registry instead of the
+      Microsoft Marketplace)
 
 ### UX polish
 - [ ] Diffed re-render (animate node position/opacity changes between
       updates instead of a full redraw) for a smoother "live" feel
 - [ ] Manual layout overrides (drag a class box, remember its position)
 - [ ] Filter/search classes, collapse fields or methods per box
-- [ ] Export diagram as SVG/PNG
 - [ ] Status bar item showing engine health / last scan time
+- [ ] Export currently covers PNG/SVG of the on-screen view; a "copy to
+      clipboard" option (skip the save dialog for quick sharing) or
+      exporting at a user-chosen resolution/scale would be natural
+      follow-ups if PNG/SVG export turns out to get used a lot
 - [ ] Cross-group edges in grouped view are drawn as straight lines between
       box edges with no obstacle avoidance, so on a busy diagram a line can
       visually cross through an unrelated box in between; fine for now, but
       real edge routing (or at least routing around group boundaries) would
       read more cleanly on large multi-folder projects
-- [ ] Group-by-folder and focus mode both reset on webview reload (closing
-      and reopening the panel, or reloading VS Code) — neither preference is
-      persisted via `webview.getState`/`setState` yet
 - [ ] Focus mode only goes one hop out; an option for two hops, or a
       breadcrumb to click through a chain of focused classes, would help for
       classes whose most useful context is a neighbor-of-a-neighbor

@@ -159,6 +159,7 @@ mod tests {
             type_name: type_name.to_string(),
             visibility: Visibility::Public,
             is_static: false,
+            line: 1,
         }
     }
 
@@ -173,6 +174,7 @@ mod tests {
             visibility: Visibility::Public,
             is_static: false,
             is_abstract: false,
+            line: 1,
         }
     }
 

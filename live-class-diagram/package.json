@@ -2,8 +2,9 @@
   "name": "live-class-diagram",
   "displayName": "Live Class Diagram",
   "description": "Live, automatically updating UML class diagrams for your project",
-  "version": "0.0.2",
+  "version": "0.0.7",
   "publisher": "kavinthaoshada",
+  "icon": "media/class-diagram-generator.png",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -98,7 +99,10 @@
     "watch:webview": "node esbuild.js --watch",
     "compile:engine": "node scripts/build-engine.js",
     "setup": "npm run compile:engine && npm run compile:webview",
-    "vscode:prepublish": "npm run setup"
+    "vscode:prepublish": "npm run setup",
+    "release:patch": "npm version patch",
+    "release:minor": "npm version minor",
+    "release:major": "npm version major"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

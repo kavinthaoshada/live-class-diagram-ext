@@ -17,6 +17,27 @@ html, body {
   gap: 4px;
 }
 
+#search-box {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  z-index: 10;
+}
+
+#search-input {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 12px;
+  width: 180px;
+}
+
+#search-input:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+}
+
 #toolbar button {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #fff);
@@ -90,6 +111,7 @@ html, body {
   fill: var(--vscode-editorWidget-background, #252526);
   stroke: var(--vscode-panel-border, #454545);
   stroke-width: 1.2;
+  cursor: pointer;
 }
 
 .class-name {
@@ -119,6 +141,10 @@ html, body {
   fill: var(--vscode-editor-foreground);
   font-family: Consolas, 'SF Mono', Menlo, monospace;
   font-size: 12px;
+}
+
+.member[data-line] {
+  cursor: pointer;
 }
 
 .edge-line {
@@ -168,9 +194,14 @@ html, body {
   stroke-width: 2;
 }
 
-.class-node.focused .box {
+.class-node.focused .box,
+.class-node.search-match .box {
   stroke: var(--vscode-focusBorder, #007fd4);
   stroke-width: 2.5;
+}
+
+.class-node.search-dimmed {
+  opacity: 0.2;
 }
 
 .group-box {

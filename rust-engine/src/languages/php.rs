@@ -35,6 +35,10 @@ fn text<'a>(node: Node, src: &'a str) -> &'a str {
     node.utf8_text(src.as_bytes()).unwrap_or("").trim()
 }
 
+fn line_of(node: Node) -> u32 {
+    node.start_position().row as u32 + 1
+}
+
 fn child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
     node.children(&mut cursor).find(|c| c.kind() == kind)
@@ -153,6 +157,7 @@ fn extract_enum(node: Node, src: &str, file: &str) -> ClassNode {
                     type_name: String::new(),
                     visibility: Visibility::Public,
                     is_static: false,
+                    line: line_of(case),
                 });
             }
         }
@@ -199,6 +204,7 @@ fn extract_members(node: Node, src: &str, traits: &mut Vec<String>) -> (Vec<Fiel
                             type_name: type_name.clone(),
                             visibility,
                             is_static,
+                            line: line_of(element),
                         });
                     }
                 }
@@ -208,6 +214,9 @@ fn extract_members(node: Node, src: &str, traits: &mut Vec<String>) -> (Vec<Fiel
                 if method.name == "__construct" {
                     fields.extend(extract_promoted_properties(member, src));
                 }
+                if let Some(field) = extract_eloquent_relation_field(member, &method.name, src) {
+                    fields.push(field);
+                }
                 methods.push(method);
             }
             _ => {}
@@ -215,6 +224,69 @@ fn extract_members(node: Node, src: &str, traits: &mut Vec<String>) -> (Vec<Fiel
     }
 
     (fields, methods)
+}
+
+const ELOQUENT_COLLECTION_RELATIONS: &[&str] =
+    &["hasMany", "belongsToMany", "morphMany", "morphToMany"];
+const ELOQUENT_SINGLE_RELATIONS: &[&str] = &["belongsTo", "hasOne", "morphOne", "morphTo"];
+
+/// Laravel Eloquent relationship accessors (`return $this->hasMany(Post::class);`)
+/// aren't type-hinted, so without this they're invisible to the generic
+/// field/param/return-type based relationship inference in `relationships.rs`.
+/// Synthesizing a field — named after the accessor method, the same name
+/// Eloquent callers actually use (`$user->posts`) — lets that existing
+/// composition/aggregation inference pick these up for free, with no changes
+/// needed there.
+fn extract_eloquent_relation_field(method: Node, method_name: &str, src: &str) -> Option<FieldNode> {
+    let body = method.child_by_field_name("body")?;
+    let (is_collection, related_class) = find_eloquent_relation_call(body, src)?;
+    Some(FieldNode {
+        name: method_name.to_string(),
+        type_name: if is_collection { format!("{related_class}[]") } else { related_class },
+        visibility: Visibility::Public,
+        is_static: false,
+        line: line_of(method),
+    })
+}
+
+fn find_eloquent_relation_call(node: Node, src: &str) -> Option<(bool, String)> {
+    if node.kind() == "member_call_expression" {
+        let object = node.child_by_field_name("object");
+        let relation_name = node.child_by_field_name("name");
+        if let (Some(object), Some(relation_name)) = (object, relation_name) {
+            if text(object, src) == "$this" {
+                let relation_name = text(relation_name, src);
+                let is_collection = ELOQUENT_COLLECTION_RELATIONS.contains(&relation_name);
+                let is_single = ELOQUENT_SINGLE_RELATIONS.contains(&relation_name);
+                if is_collection || is_single {
+                    if let Some(related_class) = first_related_class_name(node, src) {
+                        return Some((is_collection, related_class));
+                    }
+                }
+            }
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(found) = find_eloquent_relation_call(child, src) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn first_related_class_name(call: Node, src: &str) -> Option<String> {
+    let arguments = call.child_by_field_name("arguments")?;
+    for arg in children_by_kind(arguments, "argument") {
+        if let Some(class_const) = child_by_kind(arg, "class_constant_access_expression") {
+            if let Some(name_node) = class_const.child(0) {
+                if name_node.kind() == "name" {
+                    return Some(text(name_node, src).to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// PHP 8's constructor property promotion (`public function
@@ -245,6 +317,7 @@ fn extract_promoted_properties(constructor: Node, src: &str) -> Vec<FieldNode> {
             type_name,
             visibility,
             is_static: false,
+            line: line_of(param),
         });
     }
     fields
@@ -298,6 +371,7 @@ fn extract_method(node: Node, src: &str) -> MethodNode {
         visibility: visibility_of(node, src),
         is_static: child_by_kind(node, "static_modifier").is_some(),
         is_abstract: child_by_kind(node, "abstract_modifier").is_some() || node.child_by_field_name("body").is_none(),
+        line: line_of(node),
     }
 }
 
@@ -404,5 +478,107 @@ mod tests {
         assert_eq!(age.type_name, "int");
 
         assert!(person.methods.iter().any(|m| m.name == "__construct"));
+    }
+
+    #[test]
+    fn eloquent_has_many_becomes_collection_field() {
+        let classes = parse_php(
+            "class User extends Model {\n\
+             \x20   public function posts() {\n\
+             \x20       return $this->hasMany(Post::class);\n\
+             \x20   }\n\
+             }\n",
+        );
+
+        let user = find(&classes, "User");
+        let posts = user.fields.iter().find(|f| f.name == "posts").unwrap();
+        assert_eq!(posts.type_name, "Post[]");
+    }
+
+    #[test]
+    fn eloquent_belongs_to_becomes_single_field() {
+        let classes = parse_php(
+            "class Post extends Model {\n\
+             \x20   public function author() {\n\
+             \x20       return $this->belongsTo(User::class, 'author_id');\n\
+             \x20   }\n\
+             }\n",
+        );
+
+        let post = find(&classes, "Post");
+        let author = post.fields.iter().find(|f| f.name == "author").unwrap();
+        assert_eq!(author.type_name, "User");
+    }
+
+    #[test]
+    fn non_eloquent_method_does_not_synthesize_a_field() {
+        let classes = parse_php(
+            "class Calculator {\n\
+             \x20   public function add($a, $b) {\n\
+             \x20       return $a + $b;\n\
+             \x20   }\n\
+             }\n",
+        );
+
+        let calculator = find(&classes, "Calculator");
+        assert!(calculator.fields.is_empty());
+    }
+
+    #[test]
+    fn eloquent_relation_feeds_into_relationship_inference() {
+        let classes = parse_php(
+            "class User extends Model {\n\
+             \x20   public function posts() {\n\
+             \x20       return $this->hasMany(Post::class);\n\
+             \x20   }\n\
+             }\n\
+             class Post extends Model {\n\
+             }\n",
+        );
+
+        let diagram = crate::relationships::build_diagram(classes);
+        let rel = diagram
+            .relationships
+            .iter()
+            .find(|r| r.from == "User" && r.to == "Post")
+            .expect("expected a User -> Post relationship from the Eloquent hasMany accessor");
+        assert_eq!(rel.kind, crate::model::RelationshipKind::Aggregation);
+    }
+
+    #[test]
+    fn field_and_method_lines_point_at_their_own_declaration() {
+        let classes = parse_php(
+            "class Animal {\n\
+             \x20   protected string $name;\n\
+             \n\
+             \x20   public function speak(): string {\n\
+             \x20       return $this->name;\n\
+             \x20   }\n\
+             }\n",
+        );
+
+        let animal = find(&classes, "Animal");
+        let name = animal.fields.iter().find(|f| f.name == "name").unwrap();
+        let speak = animal.methods.iter().find(|m| m.name == "speak").unwrap();
+
+        // parse_php prepends a `<?php` line, so these are one-indexed from
+        // there, not from the snippet above.
+        assert_eq!(name.line, 3);
+        assert_eq!(speak.line, 5);
+    }
+
+    #[test]
+    fn eloquent_relation_field_line_points_at_the_accessor_method() {
+        let classes = parse_php(
+            "class User extends Model {\n\
+             \x20   public function posts() {\n\
+             \x20       return $this->hasMany(Post::class);\n\
+             \x20   }\n\
+             }\n",
+        );
+
+        let user = find(&classes, "User");
+        let posts = user.fields.iter().find(|f| f.name == "posts").unwrap();
+        assert_eq!(posts.line, 3);
     }
 }

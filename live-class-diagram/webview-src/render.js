@@ -159,10 +159,14 @@ function buildClassNode(node, focusedId) {
   group.appendChild(svgEl('line', { class: 'divider', x1: 0, y1: cursorY, x2: width, y2: cursorY }));
 
   for (const section of sections) {
-    const lines = section.length > 0 ? section : [''];
+    const lines = section.length > 0 ? section : [{ text: '', line: null }];
     for (const line of lines) {
-      const lineText = svgEl('text', { class: 'member', x: PADDING_X, y: cursorY + 14 });
-      lineText.textContent = line;
+      const attrs = { class: 'member', x: PADDING_X, y: cursorY + 14 };
+      if (line.line) {
+        attrs['data-line'] = line.line;
+      }
+      const lineText = svgEl('text', attrs);
+      lineText.textContent = line.text;
       group.appendChild(lineText);
       cursorY += ROW_HEIGHT;
     }
@@ -174,7 +178,7 @@ function buildClassNode(node, focusedId) {
 }
 
 export function renderDiagram(container, layout, options = {}) {
-  const { focusedId = null, onFocusRequest = null } = options;
+  const { focusedId = null, onFocusRequest = null, onNavigateRequest = null } = options;
 
   container.innerHTML = '';
   const svg = svgEl('svg', {
@@ -182,6 +186,11 @@ export function renderDiagram(container, layout, options = {}) {
     width: layout.width,
     height: layout.height,
     viewBox: `0 0 ${layout.width} ${layout.height}`,
+    // svg-pan-zoom rewrites viewBox live as the user pans/zooms, so exporting
+    // later can't rely on it (or on clientWidth/Height) to recover the
+    // diagram's actual logical size — stash the original values instead.
+    'data-content-width': layout.width,
+    'data-content-height': layout.height,
   });
   svg.appendChild(buildMarkerDefs());
 
@@ -205,18 +214,38 @@ export function renderDiagram(container, layout, options = {}) {
   }
   svg.appendChild(nodeLayer);
 
-  attachInteractions(svg, onFocusRequest);
+  attachInteractions(svg, onFocusRequest, onNavigateRequest);
   container.appendChild(svg);
   return svg;
 }
 
-function attachInteractions(svg, onFocusRequest) {
+function attachInteractions(svg, onFocusRequest, onNavigateRequest) {
   const nodes = svg.querySelectorAll('.class-node');
   for (const node of nodes) {
     node.addEventListener('mouseenter', () => setHighlight(svg, node.dataset.id));
     node.addEventListener('mouseleave', () => setHighlight(svg, null));
     if (onFocusRequest) {
       node.addEventListener('dblclick', () => onFocusRequest(node.dataset.id));
+    }
+    if (onNavigateRequest) {
+      // Ctrl/Cmd+click to jump to source, so it never fights with the
+      // plain double-click used for focus mode.
+      node.addEventListener('click', (event) => {
+        if (event.ctrlKey || event.metaKey) {
+          onNavigateRequest(node.dataset.id);
+        }
+      });
+
+      for (const memberEl of node.querySelectorAll('.member[data-line]')) {
+        memberEl.addEventListener('click', (event) => {
+          if (event.ctrlKey || event.metaKey) {
+            // Stop the class-level handler above from also firing and
+            // navigating to the class's own line instead of this member's.
+            event.stopPropagation();
+            onNavigateRequest(node.dataset.id, Number(memberEl.dataset.line));
+          }
+        });
+      }
     }
   }
 }

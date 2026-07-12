@@ -50,6 +50,10 @@ fn text<'a>(node: Node, src: &'a str) -> &'a str {
     node.utf8_text(src.as_bytes()).unwrap_or("").trim()
 }
 
+fn line_of(node: Node) -> u32 {
+    node.start_position().row as u32 + 1
+}
+
 fn child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
     node.children(&mut cursor).find(|c| c.kind() == kind)
@@ -188,6 +192,7 @@ fn extract_field(node: Node, src: &str) -> FieldNode {
             visibility_of(node, src)
         },
         is_static: has_modifier(node, "static"),
+        line: line_of(node),
     }
 }
 
@@ -214,6 +219,7 @@ fn extract_constructor_properties(node: Node, src: &str) -> Vec<FieldNode> {
             type_name: field_type_text(param, src),
             visibility: visibility_of(param, src),
             is_static: false,
+            line: line_of(param),
         });
     }
     fields
@@ -258,6 +264,7 @@ fn extract_method(node: Node, src: &str, is_abstract: bool) -> MethodNode {
         visibility: visibility_of(node, src),
         is_static: has_modifier(node, "static"),
         is_abstract,
+        line: line_of(node),
     }
 }
 
@@ -290,6 +297,7 @@ fn extract_interface(node: Node, src: &str, file: &str) -> ClassNode {
                         type_name: field_type_text(member, src),
                         visibility: Visibility::Public,
                         is_static: false,
+                        line: line_of(member),
                     });
                 }
                 "method_signature" => {
@@ -336,6 +344,7 @@ fn extract_enum(node: Node, src: &str, file: &str) -> ClassNode {
                     type_name: String::new(),
                     visibility: Visibility::Public,
                     is_static: false,
+                    line: line_of(member),
                 });
             }
         }
@@ -476,5 +485,28 @@ mod tests {
         let cat = find(&classes, "Cat");
         let secret = cat.fields.iter().find(|f| f.name == "secret").unwrap();
         assert_eq!(secret.visibility, Visibility::Private);
+    }
+
+    #[test]
+    fn fields_and_methods_capture_their_own_line_numbers() {
+        let classes = parse_ts(
+            "class Cat {\n\
+             \x20   name: string;\n\
+             \x20   age: number;\n\
+             \n\
+             \x20   speak(): string {\n\
+             \x20       return this.name;\n\
+             \x20   }\n\
+             }\n",
+        );
+
+        let cat = find(&classes, "Cat");
+        let name = cat.fields.iter().find(|f| f.name == "name").unwrap();
+        let age = cat.fields.iter().find(|f| f.name == "age").unwrap();
+        let speak = cat.methods.iter().find(|m| m.name == "speak").unwrap();
+
+        assert_eq!(name.line, 2);
+        assert_eq!(age.line, 3);
+        assert_eq!(speak.line, 5);
     }
 }

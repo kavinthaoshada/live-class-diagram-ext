@@ -39,7 +39,7 @@ function sizeOfClass(cls) {
   }
   for (const section of sections) {
     for (const line of section) {
-      width = Math.max(width, textWidth(line, MEMBER_FONT) + PADDING_X * 2);
+      width = Math.max(width, textWidth(line.text, MEMBER_FONT) + PADDING_X * 2);
     }
   }
 

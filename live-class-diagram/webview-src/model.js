@@ -33,15 +33,21 @@ export function fieldSignature(field) {
   return `${visibilitySymbol(field.visibility)} ${field.name}${typeSuffix}`;
 }
 
+// Each member line carries its own source `line` (not just its display
+// text) so the webview can offer per-field/per-method "jump to source",
+// not just per-class.
 export function classCompartments(cls) {
   if (cls.kind === 'enum') {
     return {
       header: [cls.name],
-      sections: [cls.fields.map((f) => f.name)],
+      sections: [cls.fields.map((f) => ({ text: f.name, line: f.line }))],
     };
   }
   return {
     header: [cls.name],
-    sections: [cls.fields.map(fieldSignature), cls.methods.map(methodSignature)],
+    sections: [
+      cls.fields.map((f) => ({ text: fieldSignature(f), line: f.line })),
+      cls.methods.map((m) => ({ text: methodSignature(m), line: m.line })),
+    ],
   };
 }

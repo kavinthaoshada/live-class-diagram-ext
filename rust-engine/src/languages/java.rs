@@ -34,6 +34,10 @@ fn text<'a>(node: Node, src: &'a str) -> &'a str {
     node.utf8_text(src.as_bytes()).unwrap_or("").trim()
 }
 
+fn line_of(node: Node) -> u32 {
+    node.start_position().row as u32 + 1
+}
+
 fn child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
     node.children(&mut cursor).find(|c| c.kind() == kind)
@@ -153,6 +157,7 @@ fn extract_enum(node: Node, src: &str, file: &str) -> ClassNode {
                     type_name: String::new(),
                     visibility: Visibility::Public,
                     is_static: false,
+                    line: line_of(constant),
                 });
             }
         }
@@ -196,6 +201,7 @@ fn extract_members(node: Node, src: &str) -> (Vec<FieldNode>, Vec<MethodNode>) {
                             type_name: type_name.clone(),
                             visibility,
                             is_static,
+                            line: line_of(declarator),
                         });
                     }
                 }
@@ -243,6 +249,7 @@ fn extract_method(node: Node, src: &str) -> MethodNode {
         visibility: visibility_of(node),
         is_static: has_modifier(node, "static"),
         is_abstract: has_modifier(node, "abstract") || node.child_by_field_name("body").is_none(),
+        line: line_of(node),
     }
 }
 

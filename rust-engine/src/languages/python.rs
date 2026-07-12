@@ -33,6 +33,10 @@ fn text<'a>(node: Node, src: &'a str) -> &'a str {
     node.utf8_text(src.as_bytes()).unwrap_or("").trim()
 }
 
+fn line_of(node: Node) -> u32 {
+    node.start_position().row as u32 + 1
+}
+
 fn visibility_of(name: &str) -> Visibility {
     if name.starts_with("__") && !name.ends_with("__") {
         Visibility::Private
@@ -170,6 +174,7 @@ fn class_level_field(expression_statement: Node, src: &str) -> Option<FieldNode>
         name,
         type_name,
         is_static,
+        line: line_of(assignment),
     })
 }
 
@@ -208,6 +213,7 @@ fn find_self_assignments(
                                     name,
                                     type_name,
                                     is_static: false,
+                                    line: line_of(node),
                                 });
                             }
                         }
@@ -284,6 +290,7 @@ fn extract_method(func: Node, src: &str, is_static: bool, is_abstract: bool) -> 
         return_type,
         is_static,
         is_abstract,
+        line: line_of(func),
     }
 }
 

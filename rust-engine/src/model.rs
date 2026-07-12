@@ -25,6 +25,7 @@ pub struct FieldNode {
     pub type_name: String,
     pub visibility: Visibility,
     pub is_static: bool,
+    pub line: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,6 +44,7 @@ pub struct MethodNode {
     pub visibility: Visibility,
     pub is_static: bool,
     pub is_abstract: bool,
+    pub line: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
